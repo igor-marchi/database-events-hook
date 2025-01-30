@@ -8,7 +8,7 @@ import { join } from "path";
 interface Model {
   index: string;
   id: number;
-  data: any; 
+  data: any;
 }
 
 export const handler: SQSHandler = async (event: SQSEvent) => {
@@ -27,7 +27,6 @@ export const handler: SQSHandler = async (event: SQSEvent) => {
         }),
         node: process.env.OPENSEARCH_NODE!,
       });
-
 
       const model: Model = {
         index: message.topic,
@@ -54,13 +53,14 @@ export const handler: SQSHandler = async (event: SQSEvent) => {
   }
 };
 
-export const apiGatewayHandler: APIGatewayProxyHandler = async (event: APIGatewayEvent): Promise<APIGatewayProxyResult> => {
-  let params = event.queryStringParameters || {}
+export const apiGatewayHandler: APIGatewayProxyHandler = async (
+  event: APIGatewayEvent
+): Promise<APIGatewayProxyResult> => {
+  let params = event.queryStringParameters || {};
 
-  let currentPage =  Number(params.page) || 1; 
-  let pageSize = Number(params.limitPerPage) || 1;
-  const from = (currentPage - 1) * pageSize;
-  
+  const from = Number(params.offset) || 0;
+  const pageSize = Number(params.limitPerPage) || 10;
+
   const openSearchClient = new Client({
     ...AwsSigv4Signer({
       region: "sa-east-1",
@@ -76,16 +76,16 @@ export const apiGatewayHandler: APIGatewayProxyHandler = async (event: APIGatewa
     index: params.topic,
     body: {
       query: {
-        match_all: {}
+        match_all: {},
       },
       sort: [
         {
-          ['id']: 'asc'
-        }
+          ["id"]: "asc",
+        },
       ],
-      from : from,
-      size: pageSize
-    }
+      from: from,
+      size: pageSize,
+    },
   };
 
   const response = await openSearchClient.search(searchAttributes);
@@ -93,15 +93,14 @@ export const apiGatewayHandler: APIGatewayProxyHandler = async (event: APIGatewa
   // const response = await openSearchClient.deleteByQuery({
   //   index: 'payment',
   //   body: {
-  //     query: {  
-  //       match_all: {} 
+  //     query: {
+  //       match_all: {}
   //     }
   //   }
   // });
 
   return {
     statusCode: 200,
-    body: JSON.stringify(response.body.hits)
+    body: JSON.stringify(response.body.hits),
   };
-} 
-
+};
