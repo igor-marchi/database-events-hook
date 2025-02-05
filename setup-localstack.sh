@@ -9,68 +9,68 @@ if [ $? -ne 0 ]; then
 fi
 echo "Variáveis de ambiente carregadas com sucesso"
 
-# Remove the /dist directory and /src/lambda.zip file if they exist
+# Remove o diretório /dist e o arquivo /src/lambda.zip se existirem
 echo "Removendo diretório /dist e arquivo /src/lambda.zip se existirem..."
 rm -rf dist
 rm -f src/lambda.zip
 echo "Diretório /dist e arquivo /src/lambda.zip removidos"
 
-# Create SQS queue
+# Criar fila SQS
 echo "Criando fila SQS payments.fifo..."
 PAYMENT_QUEUE_URL=$(awslocal sqs create-queue --queue-name payments.fifo --attributes FifoQueue=true --query 'QueueUrl' --output text) > /dev/null 2>&1
 if [ $? -ne 0 ]; then
   echo "Falha ao criar fila SQS payments.fifo"
   exit 1
 fi
-echo "Created SQS queue with URL: $PAYMENT_QUEUE_URL"
+echo "Fila SQS criada com URL: $PAYMENT_QUEUE_URL"
 
-# Create SQS queue
+# Criar fila SQS
 echo "Criando fila SQS customers.fifo..."
 CUSTOMER_QUEUE_URL=$(awslocal sqs create-queue --queue-name customers.fifo --attributes FifoQueue=true --query 'QueueUrl' --output text) > /dev/null 2>&1
 if [ $? -ne 0 ]; then
   echo "Falha ao criar fila SQS customers.fifo"
   exit 1
 fi
-echo "Created SQS queue with URL: $CUSTOMER_QUEUE_URL"
+echo "Fila SQS criada com URL: $CUSTOMER_QUEUE_URL"
 
-# Get SQS queue ARN
+# Obter ARN da fila SQS
 echo "Obtendo ARN da fila SQS payments.fifo..."
 PAYMENT_QUEUE_ARN=$(awslocal sqs get-queue-attributes --queue-url $PAYMENT_QUEUE_URL --attribute-names QueueArn --query 'Attributes.QueueArn' --output text) > /dev/null 2>&1
 if [ $? -ne 0 ]; then
   echo "Falha ao obter ARN da fila SQS payments.fifo"
   exit 1
 fi
-echo "SQS queue ARN: $PAYMENT_QUEUE_ARN"
+echo "ARN da fila SQS: $PAYMENT_QUEUE_ARN"
 
-# Get SQS queue ARN
+# Obter ARN da fila SQS
 echo "Obtendo ARN da fila SQS customers.fifo..."
 CUSTOMER_QUEUE_ARN=$(awslocal sqs get-queue-attributes --queue-url $CUSTOMER_QUEUE_URL --attribute-names QueueArn --query 'Attributes.QueueArn' --output text) > /dev/null 2>&1
 if [ $? -ne 0 ]; then
   echo "Falha ao obter ARN da fila SQS customers.fifo"
   exit 1
 fi
-echo "SQS queue ARN: $CUSTOMER_QUEUE_ARN"
+echo "ARN da fila SQS: $CUSTOMER_QUEUE_ARN"
 
-# Build the Lambda function
-echo "Building the Lambda function..."
+# Construir a função Lambda
+echo "Construindo a função Lambda..."
 npm run build > /dev/null 2>&1
 if [ $? -ne 0 ]; then
-  echo "Failed to build the Lambda function"
+  echo "Falha ao construir a função Lambda"
   exit 1
 fi
-echo "Lambda function built successfully"
+echo "Função Lambda construída com sucesso"
 
-# Create Lambda zip file without including the directory structure
-echo "Creating Lambda zip file..."
+# Criar arquivo zip da Lambda sem incluir a estrutura de diretórios
+echo "Criando arquivo zip da Lambda..."
 zip -j src/lambda.zip dist/lambda.js > /dev/null 2>&1
 if [ $? -ne 0 ]; then
-  echo "Failed to create Lambda zip file"
+  echo "Falha ao criar arquivo zip da Lambda"
   exit 1
 fi
-echo "Lambda zip file created successfully"
+echo "Arquivo zip da Lambda criado com sucesso"
 
-# Create Lambda function sqsConsumer
-echo "Creating Lambda function sqsConsumer..."
+# Criar função Lambda sqsConsumer
+echo "Criando função Lambda sqsConsumer..."
 awslocal lambda create-function --function-name sqsConsumer \
   --runtime nodejs14.x \
   --handler lambda.handler \
@@ -78,62 +78,62 @@ awslocal lambda create-function --function-name sqsConsumer \
   --role arn:aws:iam::000000000000:role/lambda-role \
   --environment Variables="{SQS_QUEUE_URL=$PAYMENT_QUEUE_URL, DATABASE_URL=$DATABASE_URL, OPENSEARCH_NODE=$OPENSEARCH_NODE, AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY}" > /dev/null 2>&1
 if [ $? -ne 0 ]; then
-  echo "Failed to create Lambda function sqsConsumer"
+  echo "Falha ao criar função Lambda sqsConsumer"
   exit 1
 fi
-echo "Lambda function sqsConsumer created successfully"
+echo "Função Lambda sqsConsumer criada com sucesso"
 
-# Wait for the Lambda function to become active
-echo "Waiting for Lambda function sqsConsumer to become active..."
+# Aguardar a função Lambda se tornar ativa
+echo "Aguardando a função Lambda sqsConsumer se tornar ativa..."
 while true; do
   STATE=$(awslocal lambda get-function --function-name sqsConsumer --query 'Configuration.State' --output text) > /dev/null 2>&1
   if [ "$STATE" = "Active" ]; then
-    echo "Lambda function sqsConsumer is active"
+    echo "Função Lambda sqsConsumer está ativa"
     break
   elif [ "$STATE" = "Failed" ]; then
-    echo "Lambda function sqsConsumer creation failed"
+    echo "Falha na criação da função Lambda sqsConsumer"
     exit 1
   else
-    echo "Lambda function sqsConsumer is in state $STATE. Waiting..."
+    echo "Função Lambda sqsConsumer está no estado $STATE. Aguardando..."
     sleep 5
   fi
 done
 
-# Create event source mapping sqsConsumer for PAYMENT_QUEUE_ARN
-echo "Creating event source mapping for PAYMENT_QUEUE_ARN..."
+# Criar mapeamento de fonte de evento sqsConsumer para PAYMENT_QUEUE_ARN
+echo "Criando mapeamento de fonte de evento para PAYMENT_QUEUE_ARN..."
 awslocal lambda create-event-source-mapping \
   --function-name sqsConsumer \
   --batch-size 10 \
   --event-source-arn $PAYMENT_QUEUE_ARN > /dev/null 2>&1
 if [ $? -ne 0 ]; then
-  echo "Failed to create event source mapping for PAYMENT_QUEUE_ARN"
+  echo "Falha ao criar mapeamento de fonte de evento para PAYMENT_QUEUE_ARN"
   exit 1
 fi
-echo "Event source mapping for PAYMENT_QUEUE_ARN created successfully"
+echo "Mapeamento de fonte de evento para PAYMENT_QUEUE_ARN criado com sucesso"
 
-# Create event source mapping sqsConsumer for CUSTOMER_QUEUE_ARN
-echo "Creating event source mapping for CUSTOMER_QUEUE_ARN..."
+# Criar mapeamento de fonte de evento sqsConsumer para CUSTOMER_QUEUE_ARN
+echo "Criando mapeamento de fonte de evento para CUSTOMER_QUEUE_ARN..."
 awslocal lambda create-event-source-mapping \
   --function-name sqsConsumer \
   --batch-size 10 \
   --event-source-arn $CUSTOMER_QUEUE_ARN > /dev/null 2>&1
 if [ $? -ne 0 ]; then
-  echo "Failed to create event source mapping for CUSTOMER_QUEUE_ARN"
+  echo "Falha ao criar mapeamento de fonte de evento para CUSTOMER_QUEUE_ARN"
   exit 1
 fi
-echo "Event source mapping for CUSTOMER_QUEUE_ARN created successfully"
+echo "Mapeamento de fonte de evento para CUSTOMER_QUEUE_ARN criado com sucesso"
 
-# List event source mappings for sqsConsumer
-echo "Listing event source mappings for sqsConsumer..."
+# Listar mapeamentos de fonte de evento para sqsConsumer
+echo "Listando mapeamentos de fonte de evento para sqsConsumer..."
 awslocal lambda list-event-source-mappings --function-name sqsConsumer > /dev/null 2>&1
 if [ $? -ne 0 ]; then
-  echo "Failed to list event source mappings for sqsConsumer"
+  echo "Falha ao listar mapeamentos de fonte de evento para sqsConsumer"
   exit 1
 fi
-echo "Event source mappings for sqsConsumer listed successfully"
+echo "Mapeamentos de fonte de evento para sqsConsumer listados com sucesso"
 
-# Create Lambda function apiGatewayHandler
-echo "Creating Lambda function apiGatewayHandler..."
+# Criar função Lambda apiGatewayHandler
+echo "Criando função Lambda apiGatewayHandler..."
 awslocal lambda create-function --function-name apiGatewayHandler \
   --runtime nodejs14.x \
   --handler lambda.apiGatewayHandler \
@@ -141,10 +141,10 @@ awslocal lambda create-function --function-name apiGatewayHandler \
   --role arn:aws:iam::000000000000:role/lambda-role \
   --environment Variables="{OPENSEARCH_NODE=$OPENSEARCH_NODE, AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY}" > /dev/null 2>&1
 if [ $? -ne 0 ]; then
-  echo "Failed to create Lambda function apiGatewayHandler"
+  echo "Falha ao criar função Lambda apiGatewayHandler"
   exit 1
 fi
-echo "Lambda function apiGatewayHandler created successfully"
+echo "Função Lambda apiGatewayHandler criada com sucesso"
 
 # Criar API Gateway
 
@@ -217,4 +217,6 @@ echo "API implantada no stage '$STAGE_NAME'"
 # Exibir endpoint de teste
 ENDPOINT="http://localhost:4566/restapis/$API_ID/$STAGE_NAME/_user_request_"
 echo "API Gateway configurada com sucesso!"
-echo "Teste o endpoint usando: curl $ENDPOINT"
+echo "Teste o endpoint usando:"
+echo "$ENDPOINT"
+echo "ID da API: $API_ID"
