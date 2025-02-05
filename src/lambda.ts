@@ -61,6 +61,19 @@ export const apiGatewayHandler: APIGatewayProxyHandler = async (
   const from = Number(params.offset) || 0;
   const pageSize = Number(params.limitPerPage) || 10;
 
+  let searchObj: { [key: string]: string } = {};
+  const searchStr = params.search || "";
+  searchStr
+    .replace(/[{}]/g, "")
+    .split(",")
+    .forEach((pair) => {
+      const [key, value] = pair.split("=");
+      searchObj[key.trim()] = value.trim();
+    });
+
+  console.log("cpfCnpj", searchObj.cpfCnpj);
+  console.log("email", searchObj.email);
+
   const openSearchClient = new Client({
     ...AwsSigv4Signer({
       region: "sa-east-1",
@@ -72,11 +85,22 @@ export const apiGatewayHandler: APIGatewayProxyHandler = async (
     node: process.env.OPENSEARCH_NODE!,
   });
 
+  let mustQueries = [];
+  for (const [key, value] of Object.entries(searchObj)) {
+    mustQueries.push({
+      match: {
+        [key]: value,
+      },
+    });
+  }
+
   let searchAttributes = {
     index: params.topic,
     body: {
       query: {
-        match_all: {},
+        bool: {
+          must: mustQueries,
+        },
       },
       sort: [
         {
@@ -91,12 +115,12 @@ export const apiGatewayHandler: APIGatewayProxyHandler = async (
   const response = await openSearchClient.search(searchAttributes);
 
   // const response = await openSearchClient.deleteByQuery({
-  //   index: 'payment',
+  //   index: "payment",
   //   body: {
   //     query: {
-  //       match_all: {}
-  //     }
-  //   }
+  //       match_all: {},
+  //     },
+  //   },
   // });
 
   return {
