@@ -60,19 +60,35 @@ export const apiGatewayHandler: APIGatewayProxyHandler = async (
 
   const from = Number(params.offset) || 0;
   const pageSize = Number(params.limitPerPage) || 10;
+  const searchStr = params.search?.replace(/[{}]/g, "") || "";
 
-  let searchObj: { [key: string]: string } = {};
-  const searchStr = params.search || "";
-  searchStr
-    .replace(/[{}]/g, "")
-    .split(",")
-    .forEach((pair) => {
+  let mustQueries: Array<{ match: { [key: string]: string } }> = [];
+  if (!!searchStr) {
+    searchStr.split(",").forEach((pair) => {
       const [key, value] = pair.split("=");
-      searchObj[key.trim()] = value.trim();
+      mustQueries.push({
+        match: {
+          [key.trim()]: value.trim(),
+        },
+      });
     });
+  }
 
-  console.log("cpfCnpj", searchObj.cpfCnpj);
-  console.log("email", searchObj.email);
+  const query = mustQueries.length > 0 ? { bool: { must: mustQueries } } : { match_all: {} };
+
+  let searchAttributes = {
+    index: params.topic,
+    body: {
+      query,
+      sort: [
+        {
+          ["id"]: "asc",
+        },
+      ],
+      from: from,
+      size: pageSize,
+    },
+  };
 
   const openSearchClient = new Client({
     ...AwsSigv4Signer({
@@ -84,33 +100,6 @@ export const apiGatewayHandler: APIGatewayProxyHandler = async (
     }),
     node: process.env.OPENSEARCH_NODE!,
   });
-
-  let mustQueries = [];
-  for (const [key, value] of Object.entries(searchObj)) {
-    mustQueries.push({
-      match: {
-        [key]: value,
-      },
-    });
-  }
-
-  let searchAttributes = {
-    index: params.topic,
-    body: {
-      query: {
-        bool: {
-          must: mustQueries,
-        },
-      },
-      sort: [
-        {
-          ["id"]: "asc",
-        },
-      ],
-      from: from,
-      size: pageSize,
-    },
-  };
 
   const response = await openSearchClient.search(searchAttributes);
 
