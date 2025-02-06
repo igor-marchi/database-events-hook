@@ -103,17 +103,12 @@ export const apiGatewayHandler: APIGatewayProxyHandler = async (
 
   const response = await openSearchClient.search(searchAttributes);
 
-  // const response = await openSearchClient.deleteByQuery({
-  //   index: "payment",
-  //   body: {
-  //     query: {
-  //       match_all: {},
-  //     },
-  //   },
-  // });
+  const body = {
+    items: response.body.hits?.hits.map((hit: any) => hit._source),
+  };
 
   return {
     statusCode: 200,
-    body: JSON.stringify(response.body.hits),
+    body: JSON.stringify(body),
   };
 };
