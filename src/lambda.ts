@@ -17,16 +17,7 @@ export const handler: SQSHandler = async (event: SQSEvent) => {
       const { body, receiptHandle } = record;
       const message = JSON.parse(body);
 
-      const openSearchClient = new Client({
-        ...AwsSigv4Signer({
-          region: "sa-east-1",
-          getCredentials: async () => ({
-            accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-          }),
-        }),
-        node: process.env.OPENSEARCH_NODE!,
-      });
+      const openSearchClient = createOpenSearchClient();
 
       const model: Model = {
         index: message.topic,
@@ -90,16 +81,7 @@ export const apiGatewayHandler: APIGatewayProxyHandler = async (
     },
   };
 
-  const openSearchClient = new Client({
-    ...AwsSigv4Signer({
-      region: "sa-east-1",
-      getCredentials: async () => ({
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-      }),
-    }),
-    node: process.env.OPENSEARCH_NODE!,
-  });
+  const openSearchClient = createOpenSearchClient();
 
   const response = await openSearchClient.search(searchAttributes);
 
@@ -111,4 +93,19 @@ export const apiGatewayHandler: APIGatewayProxyHandler = async (
     statusCode: 200,
     body: JSON.stringify(body),
   };
-};
+}
+
+export const createOpenSearchClient = () => {
+    return new Client({
+        ...AwsSigv4Signer({
+            region: "sa-east-1",
+            getCredentials: async () => ({
+                accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+                secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+            }),
+        }),
+        node: process.env.OPENSEARCH_NODE!,
+    });
+}
+
+
