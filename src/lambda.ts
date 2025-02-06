@@ -56,10 +56,11 @@ export const apiGatewayHandler: APIGatewayProxyHandler = async (
 
   const searchAttributes = buildSearchAttributes(topic, searchStr, from, pageSize);
   const openSearchClient = buildOpenSearchClient();
-  const response = await openSearchClient.search(searchAttributes);
-  const items = response.body.hits?.hits.map((hit: any) => hit._source);
+  const openSearchResponse = await openSearchClient.search(searchAttributes);
+  const items = openSearchResponse.body.hits?.hits.map((hit: any) => hit._source);
+  const totalCount = openSearchResponse.body.hits?.total?.value;
 
-  return buildResponse(items);
+  return buildResponse(items, totalCount);
 };
 
 const buildOpenSearchClient = () => {
@@ -108,8 +109,8 @@ const buildQuery = (searchStr: string) => {
   return { bool: { must: mustQueries } };
 };
 
-const buildResponse = (items: any) => {
-  const body = { items };
+const buildResponse = (items: any, totalCount: Number) => {
+  const body = { items, totalCount };
   return {
     statusCode: 200,
     body: JSON.stringify(body),
