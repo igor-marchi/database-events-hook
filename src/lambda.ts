@@ -17,16 +17,7 @@ export const handler: SQSHandler = async (event: SQSEvent) => {
       const { body, receiptHandle } = record;
       const message = JSON.parse(body);
 
-      const openSearchClient = new Client({
-        ...AwsSigv4Signer({
-          region: "sa-east-1",
-          getCredentials: async () => ({
-            accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-          }),
-        }),
-        node: process.env.OPENSEARCH_NODE!,
-      });
+      const openSearchClient = buildOpenSearchClient();
 
       const model: Model = {
         index: message.topic,
@@ -61,36 +52,18 @@ export const apiGatewayHandler: APIGatewayProxyHandler = async (
   const from = Number(params.offset) || 0;
   const pageSize = Number(params.limitPerPage) || 10;
   const searchStr = params.search?.replace(/[{}]/g, "") || "";
+  const topic = params.topic || "";
 
-  let mustQueries: Array<{ match: { [key: string]: string } }> = [];
-  if (!!searchStr) {
-    searchStr.split(",").forEach((pair) => {
-      const [key, value] = pair.split("=");
-      mustQueries.push({
-        match: {
-          [key.trim()]: value.trim(),
-        },
-      });
-    });
-  }
+  const searchAttributes = buildSearchAttributes(topic, searchStr, from, pageSize);
+  const openSearchClient = buildOpenSearchClient();
+  const response = await openSearchClient.search(searchAttributes);
+  const items = response.body.hits?.hits.map((hit: any) => hit._source);
 
-  const query = mustQueries.length > 0 ? { bool: { must: mustQueries } } : { match_all: {} };
+  return buildResponse(items);
+};
 
-  let searchAttributes = {
-    index: params.topic,
-    body: {
-      query,
-      sort: [
-        {
-          ["id"]: "asc",
-        },
-      ],
-      from: from,
-      size: pageSize,
-    },
-  };
-
-  const openSearchClient = new Client({
+const buildOpenSearchClient = () => {
+  return new Client({
     ...AwsSigv4Signer({
       region: "sa-east-1",
       getCredentials: async () => ({
@@ -100,13 +73,43 @@ export const apiGatewayHandler: APIGatewayProxyHandler = async (
     }),
     node: process.env.OPENSEARCH_NODE!,
   });
+};
 
-  const response = await openSearchClient.search(searchAttributes);
-
-  const body = {
-    items: response.body.hits?.hits.map((hit: any) => hit._source),
+const buildSearchAttributes = (topic: string, searchStr: string, from: number, pageSize: number) => {
+  return {
+    index: topic,
+    body: {
+      query: buildQuery(searchStr),
+      sort: [
+        {
+          id: "asc",
+        },
+      ],
+      from,
+      size: pageSize,
+    },
   };
+};
 
+const buildQuery = (searchStr: string) => {
+  if (!searchStr) return { match_all: {} };
+
+  const mustQueries = searchStr.split(",").map((pair) => {
+    const [key, value] = pair.split("=");
+    console.log("key", key);
+    console.log("value", value);
+    return {
+      match: {
+        [key.trim()]: value.trim(),
+      },
+    };
+  });
+
+  return { bool: { must: mustQueries } };
+};
+
+const buildResponse = (items: any) => {
+  const body = { items };
   return {
     statusCode: 200,
     body: JSON.stringify(body),
