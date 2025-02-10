@@ -97,8 +97,6 @@ const buildQuery = (searchStr: string) => {
 
   const mustQueries = searchStr.split(",").map((pair) => {
     const [key, value] = pair.split("=");
-    console.log("key", key);
-    console.log("value", value);
     return {
       match: {
         [key.trim()]: value.trim(),
