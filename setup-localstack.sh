@@ -33,6 +33,15 @@ if [ $? -ne 0 ]; then
 fi
 echo "Fila SQS criada com URL: $CUSTOMER_QUEUE_URL"
 
+# Criar fila SQS
+echo "Criando fila SQS customerAccounts.fifo..."
+CUSTOMER_ACCOUNT_QUEUE_URL=$(awslocal sqs create-queue --queue-name customerAccounts.fifo --attributes FifoQueue=true --query 'QueueUrl' --output text) > /dev/null 2>&1
+if [ $? -ne 0 ]; then
+  echo "Falha ao criar fila SQS customerAccounts.fifo"
+  exit 1
+fi
+echo "Fila SQS criada com URL: $CUSTOMER_QUEUE_URL"
+
 # Obter ARN da fila SQS
 echo "Obtendo ARN da fila SQS payments.fifo..."
 PAYMENT_QUEUE_ARN=$(awslocal sqs get-queue-attributes --queue-url $PAYMENT_QUEUE_URL --attribute-names QueueArn --query 'Attributes.QueueArn' --output text) > /dev/null 2>&1
@@ -50,6 +59,15 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 echo "ARN da fila SQS: $CUSTOMER_QUEUE_ARN"
+
+# Obter ARN da fila SQS
+echo "Obtendo ARN da fila SQS customers.fifo..."
+CUSTOMER_ACCOUNT_QUEUE_ARN=$(awslocal sqs get-queue-attributes --queue-url $CUSTOMER_ACCOUNT_QUEUE_URL --attribute-names QueueArn --query 'Attributes.QueueArn' --output text) > /dev/null 2>&1
+if [ $? -ne 0 ]; then
+  echo "Falha ao obter ARN da fila SQS customerAccounts.fifo"
+  exit 1
+fi
+echo "ARN da fila SQS: $CUSTOMER_ACCOUNT_QUEUE_ARN"
 
 # Construir a função Lambda
 echo "Construindo a função Lambda..."
@@ -122,6 +140,18 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 echo "Mapeamento de fonte de evento para CUSTOMER_QUEUE_ARN criado com sucesso"
+
+# Criar mapeamento de fonte de evento sqsConsumer para CUSTOMER_ACCOUNT_QUEUE_ARN
+echo "Criando mapeamento de fonte de evento para CUSTOMER_ACCOUNT_QUEUE_ARN..."
+awslocal lambda create-event-source-mapping \
+  --function-name sqsConsumer \
+  --batch-size 10 \
+  --event-source-arn $CUSTOMER_ACCOUNT_QUEUE_ARN > /dev/null 2>&1
+if [ $? -ne 0 ]; then
+  echo "Falha ao criar mapeamento de fonte de evento para CUSTOMER_ACCOUNT_QUEUE_ARN"
+  exit 1
+fi
+echo "Mapeamento de fonte de evento para CUSTOMER_ACCOUNT_QUEUE_ARN criado com sucesso"
 
 # Listar mapeamentos de fonte de evento para sqsConsumer
 echo "Listando mapeamentos de fonte de evento para sqsConsumer..."
