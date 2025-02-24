@@ -4,11 +4,20 @@ import { Client } from "@opensearch-project/opensearch";
 import { AwsSigv4Signer } from "@opensearch-project/opensearch/lib/aws";
 import { ResponseError } from "@opensearch-project/opensearch/lib/errors";
 import { join } from "path";
+import { off } from "process";
 
 interface Model {
   index: string;
   id: number;
   data: any;
+}
+
+interface Query {
+  searchedFieldListWithAlias?: any,
+  fromTopic?: string,
+  alias?: string,
+  listOpenSearchJoinInfo?: any,
+  searchWhere?: any
 }
 
 export const handler: SQSHandler = async (event: SQSEvent) => {
@@ -29,7 +38,7 @@ export const handler: SQSHandler = async (event: SQSEvent) => {
         index: model.index,
         id: model.id?.toString(),
         body: model.data,
-      });
+      }); 
 
       console.log("Dados indexados no OpenSearch:", model);
     } catch (error) {
@@ -49,16 +58,49 @@ export const apiGatewayHandler: APIGatewayProxyHandler = async (
 ): Promise<APIGatewayProxyResult> => {
   let params = event.queryStringParameters || {};
 
-  const from = Number(params.offset) || 0;
-  const pageSize = Number(params.limitPerPage) || 10;
-  const searchStr = params.search?.replace(/[{}]/g, "") || "";
-  const topic = params.topic || "";
+  const offset = Number(params.offset) || 0;
+  const limit = Number(params.limitPerPage) || 10;
+  const query: Query = params.query ? JSON.parse(params.query) : {};
 
-  const searchAttributes = buildSearchAttributes(topic, searchStr, from, pageSize);
+  let fieldsToSearch = ""
+  if (query.searchedFieldListWithAlias.length === 0) {
+    fieldsToSearch += "*";
+  } else {
+    fieldsToSearch += query.searchedFieldListWithAlias.join();
+  }
+
+  const selectQuery = buildQuery(query, limit, offset); 
+  
+  console.log(selectQuery);
+
   const openSearchClient = buildOpenSearchClient();
-  const openSearchResponse = await openSearchClient.search(searchAttributes);
-  const items = openSearchResponse.body.hits?.hits.map((hit: any) => hit._source);
-  const totalCount = openSearchResponse.body.hits?.total?.value;
+  const openSearchResponse = await openSearchClient.transport.request({
+    method: "POST",
+    path: "_plugins/_sql",
+    body: {
+      query: "SELECT " + fieldsToSearch + selectQuery + " LIMIT " + limit + " OFFSET " + offset 
+    }
+  })
+
+  const columns = openSearchResponse.body.schema.map((col: any) => col.name);
+  const data = openSearchResponse.body.datarows.map((row: any[]) => {
+    return row.reduce((acc, value, index) => {
+      acc[columns[index]] = value;
+      return acc;
+    }, {} as Record<string, any>);
+  });
+
+  const items = data;
+
+  const response = await openSearchClient.transport.request({
+    method: "POST",
+    path: "_plugins/_sql",
+    body: {
+      query: "SELECT query.id" + selectQuery
+    }
+  })
+
+  const totalCount = response.body.total;
 
   return buildResponse(items, totalCount);
 };
@@ -73,38 +115,31 @@ const buildOpenSearchClient = () => {
       }),
     }),
     node: process.env.OPENSEARCH_NODE!,
+    requestTimeout: 60000,
   });
 };
 
-const buildSearchAttributes = (topic: string, searchStr: string, from: number, pageSize: number) => {
-  return {
-    index: topic,
-    body: {
-      query: buildQuery(searchStr),
-      sort: [
-        {
-          id: "asc",
-        },
-      ],
-      from,
-      size: pageSize,
-    },
-  };
-};
+const buildQuery = (queryParams: Query, limit: Number, offset: Number) => {
+  let fieldsToSearch = ""
+  if (queryParams.searchedFieldListWithAlias.length === 0) {
+    fieldsToSearch += "*";
+  } else {
+    fieldsToSearch += queryParams.searchedFieldListWithAlias.join();
+  }
 
-const buildQuery = (searchStr: string) => {
-  if (!searchStr) return { match_all: {} };
+  let from = queryParams.fromTopic + " " + queryParams.alias
 
-  const mustQueries = searchStr.split(",").map((pair) => {
-    const [key, value] = pair.split("=");
-    return {
-      match: {
-        [key.trim()]: value.trim(),
-      },
-    };
-  });
+  let joinClause = "";  
+  for (let joinDomain of queryParams.listOpenSearchJoinInfo) {
+    joinClause += " join " + joinDomain.domainToJoin + " " + joinDomain.alias + " on " + joinDomain.joinCondition
+  }
 
-  return { bool: { must: mustQueries } };
+  let where = ""
+  if (queryParams.searchWhere?.length > 0) {
+    where = " WHERE " + queryParams.searchWhere.join(" AND ");
+  }
+
+  return " FROM " + from + joinClause + where;
 };
 
 const buildResponse = (items: any, totalCount: Number) => {
