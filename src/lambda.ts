@@ -16,7 +16,6 @@ export const handler: SQSHandler = async (event: SQSEvent) => {
       const { body, receiptHandle } = record;
       let message = JSON.parse(body);
       
-      const updateFields = message.updateAnotherTopicList;
       delete message.updateAnotherTopicList;
 
       const openSearchClient = buildOpenSearchClient();
@@ -32,33 +31,6 @@ export const handler: SQSHandler = async (event: SQSEvent) => {
         id: model.id?.toString(),
         body: model.data,
       });
-
-      if (updateFields.length > 0) {
-        for (const field of updateFields) {
-          let scriptSource = "";
-          const params: { [key: string]: any } = {};
-
-          for (const fieldInfo of field.fieldValueInfo) {
-            scriptSource += `ctx._source.${fieldInfo.fieldName} = params.${fieldInfo.fieldName};`;
-            params[fieldInfo.fieldName] = fieldInfo.fieldValue;
-          }
-
-          await openSearchClient.updateByQuery({
-            index: field.topic,
-            body: {
-              script: {
-                source: scriptSource,
-                params: params
-              },
-              query: {
-                term: {
-                  [field.referenceFieldName]: field.referenceId
-                }
-              }
-            }
-          });
-        }
-      }
 
       console.log("Dados indexados no OpenSearch:", model);
     } catch (error) {
